@@ -1,0 +1,15 @@
+$student = new User();
+$student->name = $row[3];
+$student->f_name = $row[6];
+$student->m_name = $row[7];
+$student->roll_no = $row[1];
+$student->adm_roll_no = $row[2];
+$student->gender = $row[4];
+$student->religion = $row[5];
+$student->phone = $row[9];
+$student->guard_phone = $row[8];
+$student->group = 'SCIENCE';
+$student->section = $section;
+$student->shift = 'DAY';
+$student->save();
+$student->assignRole('Student');

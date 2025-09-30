@@ -1,0 +1,23 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+
+class StudentSections extends Model
+{
+    use HasFactory;
+
+    protected $with = ['section'];
+
+    protected $hidden = [
+        'created_at',
+        'updated_at',
+    ];
+
+
+    public function section(){
+        return $this->belongsTo(Section::class);
+    }
+}
