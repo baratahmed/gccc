@@ -1,4 +1,5 @@
 <script setup>
+import { Chart, Grid, Bar, Tooltip } from 'vue3-charts'
 import { onMounted, ref, computed} from "vue";
 import Datepicker from 'vuejs3-datepicker';  // It's used
 import {storeToRefs} from "pinia"
@@ -12,9 +13,16 @@ const {dashboard} = storeToRefs(pinia_dashboard);
 var d = new Date();
 const from = ref( new Date(`${d.getFullYear()}-${d.getMonth()+1}-${1}`));
 const to = ref(new Date());
+const chartData = ref({})
 
 onMounted(async()=>{
-    await pinia_dashboard.index(from.value, to.value)
+    await pinia_dashboard.index(from.value, to.value);
+
+    chartData.value = Object.entries(pinia_dashboard.dashboard).map(([subject, values]) => ({
+        name: subject,
+        total: Number(values?.total_classes ?? 0),
+        present: Number(values?.present ?? 0)
+    }))
 })
 
 const getResults = async () => {
@@ -22,6 +30,26 @@ const getResults = async () => {
 }
 
 const debounceSearch = computed(()=> debounce(getResults,500));
+
+chartData.value = Object.entries(pinia_dashboard.dashboard).map(([subject, values]) => ({
+    name: subject,
+    total: Number(values?.total_classes ?? 0),
+    present: Number(values?.present ?? 0)
+}))
+  
+const margin = ref({ top: 20, right: 20, bottom: 20, left: 20 })
+
+const axis = ref({
+  primary: { type: "band" },
+  secondary: {
+    domain: ["dataMin", "dataMax + 1"],
+    type: "linear",
+    ticks: 5
+  }
+})
+
+const direction = ref("horizontal")
+
 
 </script>
 <template lang="">
@@ -185,108 +213,30 @@ const debounceSearch = computed(()=> debounce(getResults,500));
             </div>
             <div class="row" v-else>
 
-                <!-- <div class="col-lg-3 col-6">
-                    <div class="small-box bg-info">
-                    <div class="inner">
-                        <h3>{{dashboard.present}}</h3> 
-                        <h5>Present</h5>
-                    </div>
-                    <div class="icon">
-                        <i class="ion ion-bag"></i>
-                    </div>
-                    <router-link :to="{name: 'user.dashboard'}" class="small-box-footer" :class="{ disabled: auth.user?.role == 'Employee' }">More info <i class="fas fa-arrow-circle-right"></i></router-link>
-                    </div>
-                </div>
-                <div class="col-lg-3 col-6">
-                    <div class="small-box bg-warning">
-                    <div class="inner">
-                        <h3>{{dashboard.absent}}</h3>
+                    <div class="ml-5">
+                         <Chart
+                            :size="{ width: 600, height: 400 }"
+                            :data="chartData"
+                            :margin="margin"
+                            :direction="direction"
+                            :axis="axis"
+                        >
+                            <template #layers>
+                                <Grid strokeDasharray="3,3" />
+                                <Bar :dataKeys="['name', 'total']" :barStyle="{ fill: '#17078A' }" />
+                                <Bar :dataKeys="['name', 'present']" :barStyle="{ fill: '#06C222' }" />
+                                </template>
 
-                        <h5>Absent</h5>
+                                <template #widgets>
+                                <Tooltip
+                                    :config="{
+                                    total: { color: '#17078A', label: 'Total Classes' },
+                                    present: { color: '#06C222', label: 'Present' }
+                                    }"
+                                />
+                            </template>
+                        </Chart>
                     </div>
-                    <div class="icon">
-                        <i class="ion ion-person-add"></i>
-                    </div>
-                    <router-link :to="{name: 'user.dashboard'}" class="small-box-footer" :class="{ disabled: auth.user?.role == 'Employee' }">More info <i class="fas fa-arrow-circle-right"></i></router-link>
-                    </div>
-                </div>                
-                <div class="col-lg-3 col-6">
-                    <div class="small-box bg-success">
-                    <div class="inner">
-                        <h3>{{dashboard.percentage}}<sup style="font-size: 20px">%</sup></h3>
-                        <h5>Attendance Percentage</h5>
-                    </div>
-                    <div class="icon">
-                        <i class="ion ion-pie-graph"></i>
-                    </div>
-                    <router-link :to="{name: 'user.dashboard'}" class="small-box-footer" :class="{ disabled: auth.user?.role == 'Employee' }">More info <i class="fas fa-arrow-circle-right"></i></router-link>
-                    </div>
-                </div>
-                <div class="col-lg-3 col-6">
-                    <div class="small-box bg-danger">
-                    <div class="inner">
-                        <h3>{{dashboard.last_result}}</h3>
-
-                        <h5>Last Assignment Mark</h5>
-                    </div>
-                    <div class="icon">
-                        <i class="ion ion-pie-graph"></i>
-                    </div>
-                    <router-link :to="{name: 'user.dashboard'}" class="small-box-footer" :class="{ disabled: auth.user?.role == 'Employee' }">More info <i class="fas fa-arrow-circle-right"></i></router-link>
-                    </div>
-                </div>
-                <div class="col-lg-3 col-6">
-                    <div class="small-box bg-success">
-                        <div class="inner">
-                            <h3>{{dashboard.total_assignments}}</h3>
-                            <h5>Total Assignments</h5>
-                        </div>
-                        <div class="icon">
-                            <i class="ion ion-stats-bars"></i>
-                        </div>
-                        <a href="#" class="small-box-footer" :class="{ disabled: auth.user?.role == 'Employee' }">More info <i class="fas fa-arrow-circle-right"></i></a>
-                    </div>
-                </div>
-                <div class="col-lg-3 col-6">
-                    <div class="small-box bg-warning">
-                    <div class="inner">
-                        <h3>{{dashboard.highest_mark}}</h3>
-
-                        <h5>Highest Mark</h5>
-                    </div>
-                    <div class="icon">
-                        <i class="ion ion-person-add"></i>
-                    </div>
-                    <router-link :to="{name: 'user.dashboard'}" class="small-box-footer" :class="{ disabled: auth.user?.role == 'Employee' }">More info <i class="fas fa-arrow-circle-right"></i></router-link>
-                    </div>
-                </div>
-                <div class="col-lg-3 col-6">
-                    <div class="small-box bg-success">
-                    <div class="inner">
-                        <h3>{{dashboard.lowest_mark}}</h3>
-
-                        <h5>Lowest Mark</h5>
-                    </div>
-                    <div class="icon">
-                        <i class="ion ion-pie-graph"></i>
-                    </div>
-                    <router-link :to="{name: 'user.dashboard'}" class="small-box-footer" :class="{ disabled: auth.user?.role == 'Employee' }">More info <i class="fas fa-arrow-circle-right"></i></router-link>
-                    </div>
-                </div>
-                <div class="col-lg-3 col-6"> 
-                    <div class="small-box bg-danger">
-                    <div class="inner">
-                        <h3>{{dashboard.average_mark}}</h3>
-
-                        <h5>Average Mark</h5>
-                    </div>
-                    <div class="icon">
-                        <i class="ion ion-pie-graph"></i>
-                    </div>
-                    <router-link :to="{name: 'user.dashboard'}" class="small-box-footer" :class="{ disabled: auth.user?.role == 'Employee' }">More info <i class="fas fa-arrow-circle-right"></i></router-link>
-                    </div>
-                </div> -->
-   
                     <table class="table table-bordered table-hover table-striped ml-5">
                         <thead class="bg-dark text-center">
                             <tr>
@@ -298,9 +248,9 @@ const debounceSearch = computed(()=> debounce(getResults,500));
                             </tr>
                         </thead>
                         <tbody>
-                            <tr class="font-weight-bold text-center" v-for="(item, key, index) in dashboard" :key="index">
+                            <tr class="font-weight-bold text-center" v-for="(item, index) in dashboard" :key="index">
                                 <td>{{index+1}}</td>
-                                <td>{{key}}</td>
+                                <td>{{item.subject_name}}</td>
                                 <td>{{item.total_classes ?? '-'}}</td>
                                 <td>{{item.present ?? '-'}}</td>
                                 <td>{{item.percentage}} %</td>

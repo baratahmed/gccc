@@ -1,4 +1,7 @@
 <script setup>
+import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
+import XLSX from "xlsx-js-style";
 import { onMounted, ref, computed} from "vue";
 import Datepicker from 'vuejs3-datepicker';  // It's used
 import {storeToRefs} from "pinia"
@@ -41,18 +44,137 @@ const getResults = async () => {
 
 const debounceSearch = computed(()=> debounce(getResults,500));
 
+const generatePdf = (subjects) => {
+   const doc = new jsPDF();
 
-function printTable() {
-  const printContent = document.getElementById('print-section').innerHTML;
-  const originalContent = document.body.innerHTML;
+  // Title
+  doc.setFontSize(18);
+  doc.setFont("helvetica", "bold");
+  doc.text("Teachers Report", doc.internal.pageSize.getWidth() / 2, 20, {
+    align: "center",
+  });
 
-  document.body.innerHTML = printContent;
-  window.print();
+  subjects.forEach((subj, index) => {
+    // Add spacing between subjects
+    let y = doc.lastAutoTable ? doc.lastAutoTable.finalY + 15 : 30;
 
-  document.body.innerHTML = originalContent;
-  location.reload();
+    // Subject Name as a header
+    doc.setFontSize(14);
+    doc.setFont("helvetica", "bold");
+    doc.text(`Subject: ${subj.subject_name}`, doc.internal.pageSize.getWidth() / 2, y, {
+      align: "center",
+    });
+
+    // Prepare table data
+    const headers = [["Teacher Name", "Phone", "Total Classes", "Teacher ID"]];
+    const rows = subj.teachers.map((t) => [
+      t.name,
+      t.phone,
+      t.total_classes ?? "-",
+      t.id,
+    ]);
+
+    // Draw table
+    autoTable(doc, {
+      head: headers,
+      body: rows,
+      startY: y + 5,
+      theme: "grid", // "striped" | "plain" | "grid"
+      headStyles: {
+        fillColor: [41, 128, 185], // blue header
+        textColor: [255, 255, 255],
+        halign: "center",
+        fontSize: 11,
+        fontStyle: "bold",
+      },
+      bodyStyles: {
+        fontSize: 10,
+        halign: "center",
+      },
+      styles: {
+        cellPadding: 4,
+        lineWidth: 0.2,
+      },
+      margin: { left: 15, right: 15 },
+    });
+  });
+
+  // Save file
+  doc.save("Teachers-Report-"+new Date().toDateString()+".pdf");
+};
+
+function buildSheet(subjects, sheetTitle) {
+  let rows = [];
+
+  // Title row (merged across 4 cols)
+  rows.push([
+    {
+      v: sheetTitle,
+      s: {
+        font: { bold: true, sz: 16 },
+        alignment: { horizontal: "center", vertical: "center" },
+      },
+    },
+    {}, {}, {}
+  ]);
+
+  rows.push([]); // blank row
+
+  subjects.forEach((subj) => {
+    // Subject name row (merged)
+    rows.push([
+      {
+        v: `Subject: ${subj.subject_name}`,
+        s: {
+          font: { bold: true, sz: 14 },
+          alignment: { horizontal: "center" },
+        },
+      },
+      {}, {}, {}
+    ]);
+
+    // Header row
+    rows.push([
+      { v: "Teacher Name", s: { font: { bold: true } } },
+      { v: "Phone", s: { font: { bold: true } } },
+      { v: "Total Classes", s: { font: { bold: true } } },
+      { v: "Teacher ID", s: { font: { bold: true } } },
+    ]);
+
+    // Teacher rows
+    subj.teachers.forEach((t) => {
+      rows.push([t.name, t.phone, t.total_classes ?? "-", t.id]);
+    });
+
+    rows.push([]);
+  });
+
+  const sheet = XLSX.utils.aoa_to_sheet(rows);
+
+  // Merge title row
+  sheet["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 3 } }];
+
+  // Merge each subject row
+  rows.forEach((row, idx) => {
+    if (row[0] && typeof row[0].v === "string" && row[0].v.startsWith("Subject:")) {
+      sheet["!merges"].push({ s: { r: idx, c: 0 }, e: { r: idx, c: 3 } });
+    }
+  });
+
+  return sheet;
+}
+
+const generateExcel = (data) => {
+  
+  const wb = XLSX.utils.book_new();
+  const sheet = buildSheet(data, "Subjects & Teachers");
+  XLSX.utils.book_append_sheet(wb, sheet, "Subjects");
+
+  // Export
+  XLSX.writeFile(wb, "Teachers-Report-"+new Date().toDateString()+".xlsx");
 
 }
+
 </script>
 <template lang=""> 
     <h3 class=" text-center text-success pt-3">Teacher's Report </h3>
@@ -85,7 +207,8 @@ function printTable() {
                         </select>
                     </div>
 
-                    <button class="btn btn-primary mt-3" @click.prevent="printTable">Print</button>
+                    <button class="btn btn-primary mt-3 mr-2" :disabled="pinia_report.teacher_reports.length == 0" @click.prevent="generatePdf(pinia_report.teacher_reports)">Generate PDF</button>
+                    <button class="btn btn-info mt-3" :disabled="pinia_report.teacher_reports.length == 0" @click.prevent="generateExcel(pinia_report.teacher_reports)">Generate Excel</button>
 
                 </div>       
             </div>

@@ -34,11 +34,9 @@ Route::controller(AuthController::class)->group(function(){
     Route::post('/update/profile/image','updateProfileImage');
 });
 
-
-
-    Route::controller(PdfController::class)->group(function(){
-        Route::get('/test/pdf','index');
-    });
+Route::controller(PdfController::class)->group(function(){
+    Route::get('/test/pdf','index');
+});
     
 Route::middleware('auth:sanctum','check_authorization')->group(function () {
     Route::controller(AuthController::class)->group(function(){

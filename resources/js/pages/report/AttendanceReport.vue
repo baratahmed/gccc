@@ -1,6 +1,7 @@
 <script setup>
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
+import XLSX from "xlsx-js-style";
 import axiosInstance from "@/services/AxiosService";
 import { onMounted, ref, computed, watch, reactive} from "vue";
 import {storeToRefs} from "pinia";
@@ -125,45 +126,161 @@ const percentage = (student) => {
   return ((getTotalPresent(student.id) / total_classes) * 100).toFixed(1);
 };
 
-function printTable() {
-  const printContent = document.getElementById('print-section').innerHTML;
-  const originalContent = document.body.innerHTML;
+const generatePdf = (students, attendances) => {
+  const doc = new jsPDF("landscape");
 
-  document.body.innerHTML = printContent;
-  window.print();
+  // Title
+  doc.setFontSize(16);
+  doc.setFont("helvetica", "bold");
+  doc.text("Attendance Report", doc.internal.pageSize.getWidth() / 2, 15, { align: "center" });
 
-  document.body.innerHTML = originalContent;
-  location.reload();
+  // --- Extract dates from attendance records ---
+  const attendanceDates = attendances.map(a => a.date);
+  
+  // Dynamic headers
+  const head = [
+    ["Name", "Roll", ...attendanceDates, "Total Present", "Total Classes", "Percentage"]
+  ];
 
-}
+  // --- Build table rows ---
+  const body = students.map(student => {
+    let totalPresent = 0;
+    let totalClasses = attendanceDates.length;
 
-async function generatePdf() {
-  try {
-    // 1. Fetch JSON data from Laravel API
-    let response = await axiosInstance.get('/test/pdf');
-    let data = await response.data;
-
-    // 2. Initialize jsPDF
-    const doc = new jsPDF();
-
-    // 3. Add title
-    doc.text("Student List", 14, 20);
-
-    autoTable(doc, {
-      head: [["ID", "Name", "Roll"]],
-      body: data.map((s) => [s.id, s.name, s.roll]),
-      startY: 30,
+    // Check attendance for each date
+    const dateMarks = attendanceDates.map(date => {
+      const attendance = attendances.find(a => a.date === date);
+      if (attendance) {
+        const presentIds = JSON.parse(attendance.std_ids);
+        if (presentIds.includes(student.id)) {
+          totalPresent++;
+          return "1"; // Present
+        } else {
+          return "-"; // Absent
+        }
+      }
+      return "-";
     });
 
-    // 6. Save PDF
-    doc.save("students.pdf");
-  } catch (error) {
-    console.error("Error generating PDF:", error);
-  }
+    // Percentage
+    const percentage = totalClasses > 0 ? ((totalPresent / totalClasses) * 100).toFixed(1) + "%" : "0%";
+
+    return [
+      student.name,
+      student.roll_no,
+      ...dateMarks,
+      totalPresent,
+      totalClasses,
+      percentage
+    ];
+  });
+
+  // --- Create fancy table ---
+  autoTable(doc, {
+    head: head,
+    body: body,
+    startY: 25,
+    theme: "grid",
+    headStyles: {
+      fillColor: [240, 240, 240],
+      textColor: [0, 0, 0],
+      fontSize: 10,
+      halign: "center",
+      valign: "middle",
+      fontStyle: "bold"
+    },
+    bodyStyles: {
+      fontSize: 9,
+      halign: "center",
+      valign: "middle"
+    },
+    columnStyles: {
+      0: { halign: "left", fontStyle: "bold" }, // Name
+      1: { halign: "center", fontStyle: "bold" }, // Roll
+      [head[0].length - 3]: { textColor: [0, 128, 0] }, // Total Present green
+      [head[0].length - 2]: { textColor: [0, 128, 0] }, // Total Classes green
+      [head[0].length - 1]: { textColor: [0, 0, 255], fontStyle: "bold" } // Percentage blue
+    },
+    styles: { cellPadding: 3 }
+  });
+  doc.save("Attendance-Report-"+new Date().toDateString()+".pdf");
+};
+
+function buildSheet(subjects, sheetTitle) {
+  let rows = [];
+
+  // Title row (merged across 4 cols)
+  rows.push([
+    {
+      v: sheetTitle,
+      s: {
+        font: { bold: true, sz: 16 },
+        alignment: { horizontal: "center", vertical: "center" },
+      },
+    },
+    {}, {}, {}
+  ]);
+
+  rows.push([]); // blank row
+
+  subjects.forEach((subj) => {
+    // Subject name row (merged)
+    rows.push([
+      {
+        v: `Subject: ${subj.subject_name}`,
+        s: {
+          font: { bold: true, sz: 14 },
+          alignment: { horizontal: "center" },
+        },
+      },
+      {}, {}, {}
+    ]);
+
+    // Header row
+    rows.push([
+      { v: "Teacher Name", s: { font: { bold: true } } },
+      { v: "Phone", s: { font: { bold: true } } },
+      { v: "Total Classes", s: { font: { bold: true } } },
+      { v: "Teacher ID", s: { font: { bold: true } } },
+    ]);
+
+    // Teacher rows
+    subj.teachers.forEach((t) => {
+      rows.push([t.name, t.phone, t.total_classes ?? "-", t.id]);
+    });
+
+    rows.push([]);
+  });
+
+  const sheet = XLSX.utils.aoa_to_sheet(rows);
+
+  // Merge title row
+  sheet["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 3 } }];
+
+  // Merge each subject row
+  rows.forEach((row, idx) => {
+    if (row[0] && typeof row[0].v === "string" && row[0].v.startsWith("Subject:")) {
+      sheet["!merges"].push({ s: { r: idx, c: 0 }, e: { r: idx, c: 3 } });
+    }
+  });
+
+  return sheet;
 }
+
+const generateExcel = (data) => {
+  
+  const wb = XLSX.utils.book_new();
+  const sheet = buildSheet(data, "Subjects & Teachers");
+  XLSX.utils.book_append_sheet(wb, sheet, "Subjects");
+
+  // Export
+  XLSX.writeFile(wb, "Teachers-Report-"+new Date().toDateString()+".xlsx");
+
+}
+
 </script>
 <template lang=""> 
-    <h3 class=" text-center text-success pt-3">Attendance Report </h3>
+    <h3 class=" text-center text-success pt-3">Attendance Report</h3>
 
     <div class="row">        
         <div class="col-12 mb-4">
@@ -187,17 +304,8 @@ async function generatePdf() {
                             iconWidth="18"
                             iconHeight="18">
                         </datepicker>
-                        <span class="mr-2"></span>                            
-                         <!-- <v-select
-                            v-model="section_ids"
-                            :options="formattedSections"
-                            label="label"
-                            :multiple="true"
-                            :reduce="option => option.id"
-                            placeholder="Select Sections"
-                            @update:modelValue="debounceSearch"
-                            style="min-width:200px"
-                          /> -->
+                        <span class="mr-2"></span>                     
+                         
                         <select v-model="form.session_id" id="" class="form-control" @input="debounceSearch" style="max-width: 200px;">
                             <option value="999">Select Session</option>
                             <option v-for="(session,index) in pinia_simple.simple_all_sessions" :key="index" :value="session.id">{{session.name}} | {{session.type}}</option> 
@@ -221,10 +329,9 @@ async function generatePdf() {
                         </select>
                     </div>
 
-                    <button class="btn btn-primary mt-3 mr-3" @click.prevent="printTable">Print</button>
-                    <button class="btn btn-success mt-3" @click.prevent="generatePdf">Generate PDF</button>
+                    <button class="btn btn-primary mt-3 mr-2" :disabled="attendance_reports.length == 0" @click.prevent="generatePdf(attendance_reports.students, attendance_reports.attendances)">Generate PDF</button>
+                    <button class="btn btn-info mt-3" :disabled="attendance_reports.length == 0" @click.prevent="generateExcel(attendance_reports.length)">Generate Excel</button>
                     
-
                 </div>       
             </div>
         </div>  

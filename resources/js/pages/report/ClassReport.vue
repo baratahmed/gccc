@@ -1,8 +1,8 @@
 <script setup>
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
-import * as XLSX from "xlsx";
-import { saveAs } from "file-saver";
+import XLSX from "xlsx-js-style";
+
 import { onMounted,ref, computed} from "vue";
 import Datepicker from 'vuejs3-datepicker';  // It's used
 import {storeToRefs} from "pinia"
@@ -99,100 +99,94 @@ const generatePdf = (data) => {
   });
 
   // Save file
-  doc.save("class-report-"+new Date().toDateString()+".pdf");
+  doc.save("Class-Report-"+new Date().toDateString()+".pdf");
 };
 
-const generateExcel = (data) => {
+
+function buildSheet(data, sheetTitle) {
+  let rows = [];
+
+  // Title row
+  rows.push([
+    {
+      v: sheetTitle,
+      s: {
+        font: { bold: true, sz: 16 },
+        alignment: { horizontal: "center" },
+      },
+    },
+  ]);
+
+  // Blank row
+  rows.push([]);
+
+  data.forEach((section) => {
+    // Section name row
+    rows.push([
+      {
+        v: `Section: ${section.section_name}`,
+        s: {
+          font: { bold: true, sz: 14 },
+          alignment: { horizontal: "center" },
+        },
+      },
+      {}, {}, {} 
+    ]);
+
+    // Header row
+    rows.push([
+      { v: "Teacher", s: { font: { bold: true } } },
+      { v: "Subject", s: { font: { bold: true } } },
+      { v: "Present", s: { font: { bold: true } } },
+      { v: "Submitted At", s: { font: { bold: true } } },
+    ]);
+
+    // Attendance rows
+    section.attendances.forEach((att) => {
+      rows.push([att.teacher, att.subject, att.present, att.submitted_at]);
+    });
+
+    rows.push([]); // gap between sections
+  });
+
+   const sheet = XLSX.utils.aoa_to_sheet(rows);
+
+  // Merge first row across 4 columns
+  sheet["!merges"] = [
+    { s: { r: 0, c: 0 }, e: { r: 0, c: 3 } }, // Title merge
+  ];
+
+  // Merge each section header row too (optional)
+  rows.forEach((row, idx) => {
+    if (
+      row[0] &&
+      typeof row[0].v === "string" &&
+      row[0].v.startsWith("Section:")
+    ) {
+      sheet["!merges"].push({ s: { r: idx, c: 0 }, e: { r: idx, c: 3 } });
+    }
+  });
+
+  return sheet;
+}
+
+const generateExcel = (response) => {
+
   const wb = XLSX.utils.book_new();
+  const theorySheet = buildSheet(response.theory, "Theory Classes");
+  const labSheet = buildSheet(response.lab, "Lab Classes");
 
-  // --- THEORY SHEET ---
-  let theoryRows = [];
-  data.theory.forEach((section) => {
-    theoryRows.push([`Section: ${section.section_name}`]);
-    theoryRows.push(["ID", "Teacher", "Subject", "Present", "Submitted At"]);
-    section.attendances.forEach((att) => {
-      theoryRows.push([
-        att.id,
-        att.teacher,
-        att.subject,
-        att.present,
-        att.submitted_at,
-      ]);
-    });
-    theoryRows.push([]);
-  });
-  const wsTheory = XLSX.utils.aoa_to_sheet(theoryRows);
+  XLSX.utils.book_append_sheet(wb, theorySheet, "Theory");
+  XLSX.utils.book_append_sheet(wb, labSheet, "Lab");
 
-  // style section headers
-  data.theory.forEach((section, index) => {
-    const rowIndex = index * (section.attendances.length + 3); // header row pos
-    const cellRef = XLSX.utils.encode_cell({ r: rowIndex, c: 0 });
-    if (!wsTheory[cellRef]) return;
+  // Export
+  XLSX.writeFile(wb, "Class-Report-"+new Date().toDateString()+".xlsx");
 
-    wsTheory[cellRef].s = {
-      font: { bold: true, sz: 14 },
-      alignment: { horizontal: "center" },
-    };
+}
 
-    // merge row across 5 columns
-    const range = { s: { r: rowIndex, c: 0 }, e: { r: rowIndex, c: 4 } };
-    if (!wsTheory["!merges"]) wsTheory["!merges"] = [];
-    wsTheory["!merges"].push(range);
-  });
-
-  XLSX.utils.book_append_sheet(wb, wsTheory, "Theory");
-
-  // --- LAB SHEET ---
-  let labRows = [];
-  data.lab.forEach((section) => {
-    labRows.push([`Section: ${section.section_name}`]);
-    labRows.push(["ID", "Teacher", "Subject", "Present", "Submitted At"]);
-    section.attendances.forEach((att) => {
-      labRows.push([
-        att.id,
-        att.teacher,
-        att.subject,
-        att.present,
-        att.submitted_at,
-      ]);
-    });
-    labRows.push([]);
-  });
-  const wsLab = XLSX.utils.aoa_to_sheet(labRows);
-
-  // style section headers
-  data.lab.forEach((section, index) => {
-    const rowIndex = index * (section.attendances.length + 3);
-    const cellRef = XLSX.utils.encode_cell({ r: rowIndex, c: 0 });
-    if (!wsLab[cellRef]) return;
-
-    wsLab[cellRef].s = {
-      font: { bold: true, sz: 14 },
-      alignment: { horizontal: "center" },
-    };
-
-    const range = { s: { r: rowIndex, c: 0 }, e: { r: rowIndex, c: 4 } };
-    if (!wsLab["!merges"]) wsLab["!merges"] = [];
-    wsLab["!merges"].push(range);
-  });
-
-  XLSX.utils.book_append_sheet(wb, wsLab, "Lab");
-
-  // --- SAVE FILE ---
-  const excelBuffer = XLSX.write(wb, {
-    bookType: "xlsx",
-    type: "array",
-    cellStyles: true, // make sure styles are kept
-  });
-  const blob = new Blob([excelBuffer], {
-    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  });
-  saveAs(blob, "attendance-report.xlsx");
-};
 </script>
 
 <template>
-
    <section class="content">
       <div class="container-fluid">
         <div class="row">
@@ -223,8 +217,8 @@ const generateExcel = (data) => {
                           </select>
                       </div>
 
-                      <button class="btn btn-primary mt-3 mr-2" @click.prevent="generatePdf(pinia_report.class_reports)">Generate PDF</button>
-                      <button class="btn btn-info mt-3" @click.prevent="generateExcel(pinia_report.class_reports)">Generate Excel</button>
+                      <button class="btn btn-primary mt-3 mr-2" :disabled="pinia_report.class_reports.length == 0" @click.prevent="generatePdf(pinia_report.class_reports)">Generate PDF</button>
+                      <button class="btn btn-info mt-3" :disabled="pinia_report.class_reports.length == 0" @click.prevent="generateExcel(pinia_report.class_reports)">Generate Excel</button>
 
                   </div>       
               </div>
